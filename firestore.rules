@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} { 
+      allow read, write: if false; 
+    }
+
+    // Primitive Helpers
+    function isValidId(id) { 
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+
+    function isValidVideo(data) {
+      return data.keys().hasAll(['title', 'description', 'url', 'creatorId', 'createdAt'])
+        && data.size() >= 5
+        && data.size() <= 6
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 100
+        && data.description is string && data.description.size() >= 0 && data.description.size() <= 500
+        && data.url is string && data.url.size() > 0 && data.url.size() <= 200
+        && data.creatorId is string && data.creatorId == request.auth.uid
+        && data.createdAt == request.time
+        && (
+          !("tags" in data) || 
+          (data.tags is list && data.tags.size() <= 10 && (data.tags.size() == 0 || data.tags[0] is string))
+        );
+    }
+
+    function isValidWatchLaterItem(data) {
+      return data.keys().hasAll(['videoId', 'addedAt']) 
+        && data.size() == 2
+        && data.videoId is string && data.videoId.size() > 0 && data.videoId.size() <= 128
+        && data.addedAt == request.time;
+    }
+
+    // Videos collection
+    match /videos/{videoId} {
+      allow get: if true;
+      allow list: if true;
+      allow create: if isVerified() && isValidId(videoId) && isValidVideo(incoming());
+      allow update: if isVerified() && isValidId(videoId) && existing().creatorId == request.auth.uid && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'tags'])
+        && incoming().title is string && incoming().title.size() > 0 && incoming().title.size() <= 100
+        && incoming().description is string && incoming().description.size() >= 0 && incoming().description.size() <= 500
+        && (
+          !("tags" in incoming()) || 
+          (incoming().tags is list && incoming().tags.size() <= 10 && (incoming().tags.size() == 0 || incoming().tags[0] is string))
+        )
+      );
+      allow delete: if isVerified() && isValidId(videoId) && existing().creatorId == request.auth.uid;
+    }
+
+    // Users watch later subcollection
+    match /users/{userId}/watchLater/{watchLaterId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isVerified() && request.auth.uid == userId && isValidId(watchLaterId) && isValidWatchLaterItem(incoming());
+      allow delete: if isVerified() && request.auth.uid == userId && isValidId(watchLaterId);
+    }
+  }
+}

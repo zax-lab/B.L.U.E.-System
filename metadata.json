@@ -1,0 +1,6 @@
+{
+  "name": "B.L.U.E. System App",
+  "description": "An AI-powered blueprint generator and video library",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
